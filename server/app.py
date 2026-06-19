@@ -205,6 +205,19 @@ async def post_domains(request: Request, db=Depends(get_db_connection)):
     return JSONResponse({"status": "ok"})
 
 
+@app.post("/api/domains-test")
+async def test_domains(request: Request, db=Depends(get_db_connection)):
+    data = await request.json()
+    data = data["domains"]
+    creds = get_creds(db)
+    results = []
+    for domain in data:
+        url = f"http://{domain}/live/{creds['username']}/{creds['password']}/{current_channel["ts"]}"
+        results.append({"domain": domain, "working": test_url(url)})
+
+    return JSONResponse(results)
+
+
 @app.get("/api/groups")
 def groups(db=Depends(get_db_connection)):
     return get_groups(db)

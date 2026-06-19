@@ -4,24 +4,31 @@ import { useEffect, useState } from "react"
 import { Link } from "react-router"
 import { Button } from "./components/ui/button"
 
+type TestResult = {
+  domain: string
+  working: boolean
+}
+
 export function Settings() {
   const [domains, setDomains] = useState<string[]>([""])
   const [isLoading, setIsLoading] = useState(true)
+
+  const [isTesting, setIsTesting] = useState(false)
+  const [testResults, setTestResults] = useState<TestResult[]>([])
+  const [hasTested, setHasTested] = useState(false)
 
   useEffect(() => {
     async function init() {
       try {
         const domainsRes = await fetch("/api/domains")
-
         const domainsData = await domainsRes.json()
-
-        const domains: string[] = []
+        const fetchedDomains: string[] = []
 
         domainsData.forEach((element: { key: string; domain: string }) => {
-          domains.push(element["domain"])
+          fetchedDomains.push(element["domain"])
         })
 
-        setDomains(domains)
+        setDomains(fetchedDomains)
       } catch (error) {
         console.error("Failed to fetch initial data:", error)
       } finally {
@@ -40,6 +47,39 @@ export function Settings() {
     if (!res.ok) throw new Error("Save failed")
   }
 
+  async function testDomains() {
+    setIsTesting(true)
+    setHasTested(false)
+    try {
+      const res = await fetch("/api/domains-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domains }),
+      })
+
+      if (res.ok) {
+        const data: TestResult[] = await res.json()
+        setTestResults(data)
+        setHasTested(true)
+      }
+    } catch (error) {
+      console.error("Failed to test domains:", error)
+    } finally {
+      setIsTesting(false)
+    }
+  }
+
+  function removeBrokenDomains() {
+    const workingDomains = domains.filter((d) => {
+      const result = testResults.find((r) => r.domain === d)
+      return result ? result.working : true
+    })
+
+    setDomains(workingDomains.length > 0 ? workingDomains : [""])
+    setHasTested(false)
+    setTestResults([])
+  }
+
   function addDomain() {
     setDomains([...domains, ""])
   }
@@ -51,6 +91,9 @@ export function Settings() {
   function removeDomain(i: number) {
     setDomains(domains.filter((_, idx) => idx !== i))
   }
+
+  const workingCount = testResults.filter((r) => r.working).length
+  const brokenCount = testResults.filter((r) => !r.working).length
 
   if (isLoading) {
     return (
@@ -85,12 +128,39 @@ export function Settings() {
             </div>
           ))}
         </div>
+
         <button
           onClick={addDomain}
-          className="w-full border border-dashed border-border py-2 text-xs text-muted-foreground transition-all hover:border-primary/50 hover:text-primary"
+          disabled={isTesting}
+          className="w-full border border-dashed border-border py-2 text-xs text-muted-foreground transition-all hover:border-primary/50 hover:text-primary disabled:opacity-50"
         >
           + add domain
         </button>
+
+        <button
+          onClick={testDomains}
+          disabled={isTesting}
+          className="w-full border border-dashed border-green-400 py-2 text-xs text-green-400 transition-all hover:border-green-400/80 hover:text-green-400/80 disabled:opacity-50"
+        >
+          {isTesting ? "Loading..." : "Test Domains"}
+        </button>
+
+        {hasTested && (
+          <div className="space-y-2 pt-2 text-center">
+            <p className="text-sm font-medium text-muted-foreground">
+              {workingCount} / {testResults.length} Domains Working
+            </p>
+
+            {brokenCount > 0 && (
+              <button
+                onClick={removeBrokenDomains}
+                className="w-full border border-dashed border-destructive py-2 text-xs text-destructive transition-all hover:border-destructive/80 hover:text-destructive/80 disabled:opacity-50"
+              >
+                Remove {brokenCount} Broken Domain{brokenCount > 1 ? "s" : ""}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="flex justify-center">
