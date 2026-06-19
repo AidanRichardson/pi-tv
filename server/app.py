@@ -18,21 +18,7 @@ from fastapi.responses import (
 import tempfile
 import urllib.request
 
-from server.db import (
-    add_domain,
-    get_group_channels,
-    get_channel_by_id,
-    get_creds,
-    get_db_connection,
-    get_domains,
-    get_groups,
-    get_last_channel,
-    init_db,
-    is_setup_complete,
-    mark_setup_complete,
-    set_creds,
-    update_last_channel,
-)
+from server.db import *
 from server.playlist import parse_m3u
 from server.stream import start_ffmpeg, stop_ffmpeg, is_ffmpeg_running
 
@@ -204,6 +190,19 @@ async def switch(channel_id: int, db=Depends(get_db_connection)):
     await broadcast("switching")
     begin_stream(current_channel["url"])
     return JSONResponse({"status": "switching", "channel": current_channel["name"]})
+
+
+@app.get("/api/domains")
+def domains(db=Depends(get_db_connection)):
+    return get_domains(db)
+
+
+@app.post("/api/domains")
+async def post_domains(request: Request, db=Depends(get_db_connection)):
+    data = await request.json()
+    data = data["domains"]
+    update_domains(db, data)
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/api/groups")

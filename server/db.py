@@ -157,6 +157,25 @@ def get_domains(db):
     return cursor.fetchall()
 
 
+def update_domains(db, domains_list):
+    cursor = db.cursor()
+
+    try:
+        cursor.execute("DELETE FROM domains")
+
+        for domain in domains_list:
+            domain = domain.strip()
+            if domain:
+                domain = domain.removeprefix("http://").removeprefix("https://")
+                domain = domain.rstrip("/")
+            cursor.execute("""INSERT INTO domains VALUES (NULL, ?)""", (domain,))
+        db.commit()
+
+    except Exception as e:
+        db.rollback()
+        raise e
+
+
 def set_creds(db, username, password):
     cursor = db.cursor()
     cursor.execute(

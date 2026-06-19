@@ -1,7 +1,7 @@
 "use client"
 
 import Hls from "hls.js"
-import { Tv2 } from "lucide-react"
+import { Settings, Tv2 } from "lucide-react"
 import { useEffect, useRef, useState } from "react"
 import { Link } from "react-router"
 import { Button } from "./components/ui/button"
@@ -72,7 +72,13 @@ export function App() {
   }, [])
 
   return (
-    <div className="container mx-auto p-4 md:p-6 lg:p-3">
+    <div className="relative container mx-auto p-4 md:p-6 lg:p-3">
+      <div className="absolute top-4 right-4 md:top-6 md:right-6 lg:top-3 lg:right-3">
+        <Link to="/settings">
+          <Settings className="h-12 w-12 text-primary transition-opacity hover:opacity-80" />
+        </Link>
+      </div>
+
       <div className="flex flex-col items-center justify-center space-y-4 py-8 text-center">
         <h1 className="text-4xl font-extrabold tracking-tight lg:text-5xl">
           Live Player
