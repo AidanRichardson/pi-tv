@@ -23,7 +23,7 @@ def main():
     print(f"Starting PI-TV on http://{args.host}:{args.port}")
 
     uvicorn.run(
-        "server.app:app",
+        "main:app",
         host=args.host,
         port=args.port,
         reload=args.dev,

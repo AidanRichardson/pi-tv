@@ -1,6 +1,6 @@
 import re
 
-from server.db import save_channel
+from app.db import save_channel
 
 
 def parse_m3u(db, path: str):
@@ -17,7 +17,7 @@ def parse_m3u(db, path: str):
             for value in x:
                 channel[value[0]] = value[1]
             url_split = lines[i + 1].strip().split("/")
-            channel["ts_id"] = url_split[-1]
+            channel["ts"] = url_split[-1]
             save_channel(db, channel)
             count += 1
             yield int((count / total) * 100)

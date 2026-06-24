@@ -82,7 +82,7 @@ def save_channel(db, channel):
     group_title = channel.get("group-title", "")
     name = channel.get("tvg-name", "")
     logo = channel.get("tvg-logo", "")
-    ts = channel.get("ts_id", "")
+    ts = channel.get("ts", "")
 
     if ts == "":
         return
