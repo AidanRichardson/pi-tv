@@ -1,13 +1,16 @@
 import { Fragment, useRef, useState } from "react"
 import { useNavigate } from "react-router"
+import { Button } from "./components/ui/button"
 
 type Step = "upload" | "credentials" | "complete"
+type uploadType = "file" | "url"
 
 export default function Setup() {
   const navigate = useNavigate()
   const [step, setStep] = useState<Step>("upload")
+  const [m3uParsed, setM3uParsed] = useState(false)
   const [m3uUploaded, setM3uUploaded] = useState(false)
-  const [uploading, setUploading] = useState(false)
+  const [parsing, setParsing] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [domains, setDomains] = useState<string[]>([""])
   const [username, setUsername] = useState("")
@@ -16,13 +19,14 @@ export default function Setup() {
   const [submitError, setSubmitError] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
-  const [uploadProgress, setUploadProgress] = useState(0)
+  const [parseProgress, setParseProgress] = useState(0)
+  const [uploadType, setUploadType] = useState<uploadType>("file")
+  const [m3uUrl, setM3uUrl] = useState("")
 
   async function handleFileUpload(file: File) {
     if (!file) return
-    setUploading(true)
     setUploadError(null)
-    setUploadProgress(0)
+    setParseProgress(0)
 
     const form = new FormData()
     form.append("file", file)
@@ -31,6 +35,29 @@ export default function Setup() {
       const res = await fetch("/api/setup/upload-m3u", {
         method: "POST",
         body: form,
+      })
+      if (!res.ok) throw new Error("Upload failed")
+    } catch {
+      setUploadError("Failed to upload playlist. Check the file and try again.")
+    } finally {
+      setM3uUploaded(true)
+    }
+  }
+
+  async function parsePlaylist() {
+    console.log(m3uUrl)
+    if (uploadType == "url") {
+      const res = await fetch("/api/setup/upload-url-m3u", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: m3uUrl }),
+      })
+      if (!res.ok) throw new Error("Upload failed")
+    }
+    setParsing(true)
+    try {
+      const res = await fetch("/api/setup/parse-playlist", {
+        method: "GET",
       })
       if (!res.ok) throw new Error("Upload failed")
 
@@ -44,14 +71,15 @@ export default function Setup() {
         for (const line of decoder.decode(value).split("\n")) {
           if (!line.startsWith("data: ")) continue
           const data = JSON.parse(line.slice(6))
-          setUploadProgress(data.progress)
-          if (data.done) setM3uUploaded(true)
+          setParseProgress(data.progress)
+          if (data.done) setM3uParsed(true)
         }
       }
     } catch {
       setUploadError("Failed to upload playlist. Check the file and try again.")
     } finally {
-      setUploading(false)
+      setParsing(false)
+      setStep("credentials")
     }
   }
 
@@ -121,80 +149,124 @@ export default function Setup() {
       </div>
 
       <div className="mx-auto w-full max-w-2xl space-y-6 border border-border bg-card/80 p-6">
-        {step === "upload" && (
+        {step === "upload" && parsing && (
+          <div>
+            <div className="space-y-3">
+              <p className="animate-pulse text-sm text-muted-foreground">
+                Parsing playlist...
+              </p>
+              <div className="h-1 w-full bg-border">
+                <div
+                  className="h-1 bg-primary transition-all duration-300"
+                  style={{ width: `${parseProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{parseProgress}%</p>
+            </div>
+          </div>
+        )}
+
+        {step === "upload" && !parsing && (
           <>
             <div className="space-y-1">
               <h2 className="text-lg font-semibold tracking-tight">
-                Upload your playlist
+                Upload playlist
               </h2>
               <p className="text-sm text-muted-foreground">
                 Upload an M3U or M3U8 file containing your IPTV channels.
               </p>
             </div>
-
-            <div
-              onClick={() => fileRef.current?.click()}
-              onDragOver={(e) => {
-                e.preventDefault()
-                setDragOver(true)
-              }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              className={`cursor-pointer space-y-1 border border-dashed p-12 text-center transition-all ${
-                dragOver
-                  ? "border-primary bg-primary/10"
-                  : m3uUploaded
-                    ? "border-primary bg-primary/10"
-                    : "border-border bg-transparent hover:border-primary/50 hover:bg-primary/5"
-              }`}
-            >
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".m3u,.m3u8"
-                className="hidden"
-                onChange={(e) =>
-                  e.target.files?.[0] && handleFileUpload(e.target.files[0])
-                }
-              />
-              {uploading ? (
-                <div className="space-y-3">
-                  <p className="animate-pulse text-sm text-muted-foreground">
-                    Parsing playlist...
-                  </p>
-                  <div className="h-1 w-full bg-border">
-                    <div
-                      className="h-1 bg-primary transition-all duration-300"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {uploadProgress}%
-                  </p>
-                </div>
-              ) : m3uUploaded ? (
-                <p className="text-sm font-medium text-primary">
-                  Playlist uploaded successfully
-                </p>
-              ) : (
-                <>
-                  <p className="text-sm font-medium">Drop your M3U file here</p>
-                  <p className="text-xs text-muted-foreground">
-                    or click to browse
-                  </p>
-                </>
-              )}
+            <div className="flex space-x-1">
+              <Button
+                variant={uploadType == "file" ? "default" : "outline"}
+                onClick={() => setUploadType("file")}
+                disabled={m3uUploaded}
+              >
+                File Upload
+              </Button>
+              <Button
+                variant={uploadType == "url" ? "default" : "outline"}
+                onClick={() => setUploadType("url")}
+                disabled={m3uUploaded}
+              >
+                URL
+              </Button>
             </div>
+
+            {uploadType == "url" ? (
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  Playlist URL
+                </h2>
+                <label className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                  Link to Playlist
+                </label>
+                <input
+                  onChange={(e) => setM3uUrl(e.target.value)}
+                  placeholder="playlist_url"
+                  className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+                />
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  File Upload
+                </h2>
+
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDragOver(true)
+                  }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={handleDrop}
+                  className={`cursor-pointer space-y-1 border border-dashed p-12 text-center transition-all ${
+                    dragOver
+                      ? "border-primary bg-primary/10"
+                      : m3uParsed
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-transparent hover:border-primary/50 hover:bg-primary/5"
+                  }`}
+                >
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".m3u,.m3u8"
+                    className="hidden"
+                    onChange={(e) =>
+                      e.target.files?.[0] && handleFileUpload(e.target.files[0])
+                    }
+                  />
+                  {m3uUploaded ? (
+                    <p className="text-sm font-medium text-primary">
+                      Playlist uploaded successfully
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium">
+                        Drop your M3U file here
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        or click to browse
+                      </p>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
 
             {uploadError && (
               <p className="text-xs text-destructive">{uploadError}</p>
             )}
 
             <button
-              onClick={() => setStep("credentials")}
-              disabled={!m3uUploaded}
+              onClick={() => {
+                parsePlaylist()
+              }}
+              disabled={!m3uUploaded && uploadType == "file"}
               className={`w-full p-2.5 text-sm font-medium transition-all ${
-                m3uUploaded
+                m3uUploaded || uploadType == "url"
                   ? "cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90"
                   : "cursor-not-allowed bg-muted text-muted-foreground"
               }`}
@@ -224,7 +296,7 @@ export default function Setup() {
                 <input
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="your_username"
+                  placeholder="provider_username"
                   className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
                 />
               </div>
@@ -234,10 +306,9 @@ export default function Setup() {
                   Password
                 </label>
                 <input
-                  type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="your_password"
+                  placeholder="provider_password"
                   className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
                 />
               </div>

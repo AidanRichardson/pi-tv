@@ -17,9 +17,7 @@ def parse_m3u(db, path: str):
             for value in x:
                 channel[value[0]] = value[1]
             url_split = lines[i + 1].strip().split("/")
-            channel["ts_id"] = (
-                lines[i + 1].strip().split("/")[6] if len(url_split) >= 7 else ""
-            )
+            channel["ts_id"] = url_split[-1]
             save_channel(db, channel)
             count += 1
             yield int((count / total) * 100)

@@ -1,13 +1,23 @@
 import atexit
 import asyncio
 from contextlib import contextmanager
+import json
 import threading
 import time
 import os
 from pathlib import Path
-import json
+import anyio
+import httpx
 
-from fastapi import Depends, FastAPI, WebSocket, Request, UploadFile, File
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    Request,
+    UploadFile,
+    File,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import (
     FileResponse,
@@ -15,7 +25,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
-import tempfile
+import shutil
 import urllib.request
 
 from server.db import *
@@ -24,6 +34,9 @@ from server.stream import start_ffmpeg, stop_ffmpeg, is_ffmpeg_running
 
 HLS_DIR = Path("tmp/pi-tv-hls")
 FRONTEND_DIST = Path("dist")
+UPLOAD_DIR = "/tmp/setup_uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+M3U_TEMP_PATH = os.path.join(UPLOAD_DIR, "pending_playlist.m3u")
 
 HLS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -116,29 +129,87 @@ def notify_when_ready():
 async def setup_guard(request: Request, call_next):
     with get_db_context() as db:
         if not is_setup_complete(db):
-            allowed = request.url.path.startswith(
-                "/setup", "/api"
-            ) or request.url.path.startswith("/assets")
-            if not allowed:
-                return RedirectResponse("/setup")
+
+            is_allowed_path = request.url.path.startswith(("/setup", "/api", "/assets"))
+
+            if not is_allowed_path:
+                return RedirectResponse(url="/setup")
+
     return await call_next(request)
 
 
 @app.post("/api/setup/upload-m3u")
 async def setup_upload_m3u(file: UploadFile = File(...)):
-    content = await file.read()
+    if not file.filename.endswith((".m3u", ".m3u8")):
+        raise HTTPException(status_code=400, detail="Invalid file type. Must be M3U.")
+
+    with open(M3U_TEMP_PATH, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    return {"status": "success", "message": "Playlist uploaded successfully."}
+
+
+@app.post("/api/setup/upload-url-m3u")
+async def setup_upload_m3u_from_url(request: Request):
+    try:
+        data = await request.json()
+        url_str = str(data["url"])
+    except (ValueError, KeyError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body or missing 'url' key.",
+        )
+
+    try:
+        # Stream the file download asynchronously
+        async with httpx.AsyncClient(follow_redirects=True) as client:
+            async with client.stream("GET", url_str) as response:
+                if response.status_code != 200:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Failed to fetch file from URL. HTTP Status: {response.status_code}",
+                    )
+
+                # Open the file asynchronously using anyio
+                # Open the file asynchronously using anyio
+                async with await anyio.open_file(M3U_TEMP_PATH, "wb") as buffer:
+                    # Notice 'async for' combined with 'aiter_bytes()'
+                    async for chunk in response.aiter_bytes(chunk_size=8192):
+                        await buffer.write(chunk)
+
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while requesting the URL: {str(exc)}",
+        )
+
+    return {
+        "status": "success",
+        "message": "Playlist downloaded and saved successfully.",
+    }
+
+
+@app.get("/api/setup/parse-playlist")
+async def setup_parse_playlist():
+    if not os.path.exists(M3U_TEMP_PATH):
+        raise HTTPException(
+            status_code=400, detail="No uploaded playlist found. Please upload first."
+        )
 
     async def generate():
         with get_db_context() as db:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".m3u") as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
             try:
-                for pct in parse_m3u(db, tmp_path):
+                for pct in parse_m3u(db, M3U_TEMP_PATH):
                     yield f"data: {json.dumps({'progress': pct})}\n\n"
+
                 yield f"data: {json.dumps({'progress': 100, 'done': True})}\n\n"
+
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+
             finally:
-                os.unlink(tmp_path)
+                if os.path.exists(M3U_TEMP_PATH):
+                    os.unlink(M3U_TEMP_PATH)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -190,6 +261,18 @@ async def switch(channel_id: int, db=Depends(get_db_connection)):
     await broadcast("switching")
     begin_stream(current_channel["url"])
     return JSONResponse({"status": "switching", "channel": current_channel["name"]})
+
+
+@app.get("/api/userpass")
+def userpass(db=Depends(get_db_connection)):
+    return get_creds(db)
+
+
+@app.post("/api/userpass")
+async def post_userpass(request: Request, db=Depends(get_db_connection)):
+    data = await request.json()
+    set_creds(db, data["username"], data["password"])
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/api/domains")

@@ -11,6 +11,12 @@ type TestResult = {
 
 export function Settings() {
   const [domains, setDomains] = useState<string[]>([""])
+  const [username, setUsername] = useState<string>("")
+  const [password, setPassword] = useState<string>("")
+
+  const [domainsChanged, setDomainsChanged] = useState(false)
+  const [userPassChanged, setUserPassChanged] = useState(false)
+
   const [isLoading, setIsLoading] = useState(true)
 
   const [isTesting, setIsTesting] = useState(false)
@@ -21,7 +27,9 @@ export function Settings() {
     async function init() {
       try {
         const domainsRes = await fetch("/api/domains")
+        const userpassRes = await fetch("/api/userpass")
         const domainsData = await domainsRes.json()
+        const userpassData = await userpassRes.json()
         const fetchedDomains: string[] = []
 
         domainsData.forEach((element: { key: string; domain: string }) => {
@@ -29,6 +37,8 @@ export function Settings() {
         })
 
         setDomains(fetchedDomains)
+        setUsername(userpassData["username"])
+        setPassword(userpassData["password"])
       } catch (error) {
         console.error("Failed to fetch initial data:", error)
       } finally {
@@ -39,12 +49,23 @@ export function Settings() {
   }, [])
 
   async function save() {
-    const res = await fetch("/api/domains", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ domains }),
-    })
-    if (!res.ok) throw new Error("Save failed")
+    if (domainsChanged) {
+      const res = await fetch("/api/domains", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ domains }),
+      })
+      if (!res.ok) throw new Error("Save failed")
+    }
+
+    if (userPassChanged) {
+      const res = await fetch("/api/userpass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: username, password: password }),
+      })
+      if (!res.ok) throw new Error("Save failed")
+    }
   }
 
   async function testDomains() {
@@ -76,20 +97,24 @@ export function Settings() {
     })
 
     setDomains(workingDomains.length > 0 ? workingDomains : [""])
+    setDomainsChanged(true)
     setHasTested(false)
     setTestResults([])
   }
 
   function addDomain() {
     setDomains([...domains, ""])
+    setDomainsChanged(true)
   }
 
   function updateDomain(i: number, val: string) {
     setDomains(domains.map((d, idx) => (idx === i ? val : d)))
+    setDomainsChanged(true)
   }
 
   function removeDomain(i: number) {
     setDomains(domains.filter((_, idx) => idx !== i))
+    setDomainsChanged(true)
   }
 
   const workingCount = testResults.filter((r) => r.working).length
@@ -106,6 +131,37 @@ export function Settings() {
 
   return (
     <div className="container mx-auto max-w-2xl space-y-10 p-4 md:p-6 lg:p-8">
+      <div className="space-y-1.5">
+        <h1 className="font-bold tracking-wider text-primary/85">
+          Provider Username/Password
+        </h1>
+        <label className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          Username
+        </label>
+        <input
+          value={username}
+          onChange={(e) => {
+            setUsername(e.target.value)
+            setUserPassChanged(true)
+          }}
+          placeholder="provider_username"
+          className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+        />
+
+        <label className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          Password
+        </label>
+        <input
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value)
+            setUserPassChanged(true)
+          }}
+          placeholder="provider_password"
+          className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+        />
+      </div>
+
       <div className="space-y-1.5">
         <h1 className="font-bold tracking-wider text-primary/85">Domains</h1>
         <div className="space-y-2">
