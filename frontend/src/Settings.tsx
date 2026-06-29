@@ -11,11 +11,13 @@ type TestResult = {
 
 export function Settings() {
   const [domains, setDomains] = useState<string[]>([""])
+  const [epgUrl, setEpgUrl] = useState<string>("")
   const [username, setUsername] = useState<string>("")
   const [password, setPassword] = useState<string>("")
 
   const [domainsChanged, setDomainsChanged] = useState(false)
   const [userPassChanged, setUserPassChanged] = useState(false)
+  const [epgUrlChanged, setEpgUrlChanged] = useState(false)
 
   const [isLoading, setIsLoading] = useState(true)
 
@@ -28,8 +30,10 @@ export function Settings() {
       try {
         const domainsRes = await fetch("/api/domains")
         const userpassRes = await fetch("/api/userpass")
+        const epgurlRes = await fetch("/api/epgurl")
         const domainsData = await domainsRes.json()
         const userpassData = await userpassRes.json()
+        const epgurlData = await epgurlRes.json()
         const fetchedDomains: string[] = []
 
         domainsData.forEach((element: { key: string; domain: string }) => {
@@ -37,6 +41,7 @@ export function Settings() {
         })
 
         setDomains(fetchedDomains)
+        setEpgUrl(epgurlData["epg_url"])
         setUsername(userpassData["username"])
         setPassword(userpassData["password"])
       } catch (error) {
@@ -63,6 +68,15 @@ export function Settings() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username, password: password }),
+      })
+      if (!res.ok) throw new Error("Save failed")
+    }
+
+    if (epgUrlChanged) {
+      const res = await fetch("/api/epgurl", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ epg_url: epgUrl }),
       })
       if (!res.ok) throw new Error("Save failed")
     }
@@ -131,6 +145,21 @@ export function Settings() {
 
   return (
     <div className="container mx-auto max-w-2xl space-y-10 p-4 md:p-6 lg:p-8">
+      <div className="space-y-1.5">
+        <h1 className="font-bold tracking-wider text-primary/85">EPG url</h1>
+        <label className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+          EPG url
+        </label>
+        <input
+          value={epgUrl}
+          onChange={(e) => {
+            setEpgUrl(e.target.value)
+            setEpgUrlChanged(true)
+          }}
+          placeholder="epg_url"
+          className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+        />
+      </div>
       <div className="space-y-1.5">
         <h1 className="font-bold tracking-wider text-primary/85">
           Provider Username/Password

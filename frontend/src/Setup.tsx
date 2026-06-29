@@ -8,9 +8,9 @@ type uploadType = "file" | "url"
 export default function Setup() {
   const navigate = useNavigate()
   const [step, setStep] = useState<Step>("upload")
-  const [m3uParsed, setM3uParsed] = useState(false)
   const [m3uUploaded, setM3uUploaded] = useState(false)
-  const [parsing, setParsing] = useState(false)
+  const [parsingPlaylist, setParsingPlaylist] = useState(false)
+  const [parsingEpg, setParsingEpg] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [domains, setDomains] = useState<string[]>([""])
   const [username, setUsername] = useState("")
@@ -22,6 +22,8 @@ export default function Setup() {
   const [parseProgress, setParseProgress] = useState(0)
   const [uploadType, setUploadType] = useState<uploadType>("file")
   const [m3uUrl, setM3uUrl] = useState("")
+  const [addingEpg, setAddingEpg] = useState(false)
+  const [epgUrl, setEpgUrl] = useState("")
 
   async function handleFileUpload(file: File) {
     if (!file) return
@@ -45,7 +47,6 @@ export default function Setup() {
   }
 
   async function parsePlaylist() {
-    console.log(m3uUrl)
     if (uploadType == "url") {
       const res = await fetch("/api/setup/upload-url-m3u", {
         method: "POST",
@@ -54,7 +55,15 @@ export default function Setup() {
       })
       if (!res.ok) throw new Error("Upload failed")
     }
-    setParsing(true)
+    if (addingEpg) {
+      const res = await fetch("/api/setup/upload-url-epg", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: epgUrl }),
+      })
+      if (!res.ok) throw new Error("Upload failed")
+    }
+    setParsingPlaylist(true)
     try {
       const res = await fetch("/api/setup/parse-playlist", {
         method: "GET",
@@ -72,13 +81,38 @@ export default function Setup() {
           if (!line.startsWith("data: ")) continue
           const data = JSON.parse(line.slice(6))
           setParseProgress(data.progress)
-          if (data.done) setM3uParsed(true)
         }
       }
     } catch {
       setUploadError("Failed to upload playlist. Check the file and try again.")
     } finally {
-      setParsing(false)
+      setParsingPlaylist(false)
+      setParseProgress(0)
+    }
+    setParsingEpg(true)
+    try {
+      const res = await fetch("/api/setup/parse-epg", {
+        method: "GET",
+      })
+      if (!res.ok) throw new Error("Upload failed")
+
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        for (const line of decoder.decode(value).split("\n")) {
+          if (!line.startsWith("data: ")) continue
+          const data = JSON.parse(line.slice(6))
+          setParseProgress(data.progress)
+        }
+      }
+    } catch {
+      setUploadError("Failed to upload playlist. Check the file and try again.")
+    } finally {
+      setParsingEpg(false)
       setStep("credentials")
     }
   }
@@ -149,7 +183,7 @@ export default function Setup() {
       </div>
 
       <div className="mx-auto w-full max-w-2xl space-y-6 border border-border bg-card/80 p-6">
-        {step === "upload" && parsing && (
+        {step === "upload" && parsingPlaylist && (
           <div>
             <div className="space-y-3">
               <p className="animate-pulse text-sm text-muted-foreground">
@@ -166,7 +200,24 @@ export default function Setup() {
           </div>
         )}
 
-        {step === "upload" && !parsing && (
+        {step === "upload" && parsingEpg && (
+          <div>
+            <div className="space-y-3">
+              <p className="animate-pulse text-sm text-muted-foreground">
+                Parsing epg...
+              </p>
+              <div className="h-1 w-full bg-border">
+                <div
+                  className="h-1 bg-primary transition-all duration-300"
+                  style={{ width: `${parseProgress}%` }}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">{parseProgress}%</p>
+            </div>
+          </div>
+        )}
+
+        {step === "upload" && !parsingPlaylist && !parsingEpg && (
           <>
             <div className="space-y-1">
               <h2 className="text-lg font-semibold tracking-tight">
@@ -210,7 +261,7 @@ export default function Setup() {
             ) : (
               <div>
                 <h2 className="text-lg font-semibold tracking-tight">
-                  File Upload
+                  M3U Upload
                 </h2>
 
                 <div
@@ -221,12 +272,8 @@ export default function Setup() {
                   }}
                   onDragLeave={() => setDragOver(false)}
                   onDrop={handleDrop}
-                  className={`cursor-pointer space-y-1 border border-dashed p-12 text-center transition-all ${
-                    dragOver
-                      ? "border-primary bg-primary/10"
-                      : m3uParsed
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-transparent hover:border-primary/50 hover:bg-primary/5"
+                  className={`cursor-pointer space-y-1 border border-dashed border-border bg-transparent p-12 text-center transition-all hover:border-primary/50 hover:bg-primary/5 ${
+                    dragOver && "border-primary bg-primary/10"
                   }`}
                 >
                   <input
@@ -258,6 +305,31 @@ export default function Setup() {
 
             {uploadError && (
               <p className="text-xs text-destructive">{uploadError}</p>
+            )}
+
+            <div className="flex gap-2">
+              <input
+                type="checkbox"
+                checked={addingEpg}
+                onChange={() => setAddingEpg(!addingEpg)}
+              />
+              <p>Add EPG?</p>
+            </div>
+
+            {addingEpg && (
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  EPG URL
+                </h2>
+                <label className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+                  EPG Must be in XML format
+                </label>
+                <input
+                  onChange={(e) => setEpgUrl(e.target.value)}
+                  placeholder="epg_url"
+                  className="w-full border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground/50 focus:border-primary focus:outline-none"
+                />
+              </div>
             )}
 
             <button

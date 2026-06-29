@@ -11,6 +11,7 @@ from app.db import init_db, is_setup_complete, get_channel_by_id, get_last_chann
 from app.stream import is_ffmpeg_running, stop_ffmpeg
 from api.routers import setup
 from api.routers import streaming
+from app.scheduler import scheduler, check_and_refresh_epg
 
 
 @asynccontextmanager
@@ -21,8 +22,19 @@ async def lifespan(app: FastAPI):
         if is_setup_complete(db):
             stream_manager.current_channel = get_channel_by_id(db, get_last_channel(db))
             stream_manager.build_url(db, stream_manager.current_channel["ts"])
+
+    # Start the background task manager
+    # Check every 4 hours to see if 5 days have elapsed
+    scheduler.add_job(check_and_refresh_epg, "interval", hours=4, id="epg_check")
+    scheduler.start()
+
+    # Run a check immediately on startup in case it missed its cycle while turned off
+    await check_and_refresh_epg()
+
     yield
-    # Shutdown tasks (Replaces atexit)
+
+    # Shutdown tasks
+    scheduler.shutdown()
     stop_ffmpeg()
 
 

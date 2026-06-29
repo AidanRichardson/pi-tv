@@ -8,12 +8,20 @@ interface Group {
   name: string
 }
 
+interface Programme {
+  title: string
+  start_time: string
+  stop_time: string
+}
+
 interface Channel {
-  channel_id: number
+  id: number
+  channel_id: string
   name: string
   logo: string
   ts: string
   group_id: number
+  programme: Programme
 }
 
 interface Status {
@@ -117,17 +125,17 @@ function Controller() {
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             {channels.map((channel) => {
-              const isActive = currentId === channel.channel_id
+              const isActive = currentId === channel.id
 
               return (
                 <div
-                  key={channel.channel_id}
+                  key={channel.id}
                   className={`group relative cursor-pointer overflow-hidden rounded-xl bg-card transition-all duration-200 hover:-translate-y-1 hover:shadow-md ${
                     isActive
                       ? "border-transparent bg-card text-primary ring-2 ring-primary"
                       : "hover:border hover:border-primary"
                   }`}
-                  onClick={() => switchChannel(channel.channel_id)}
+                  onClick={() => switchChannel(channel.id)}
                 >
                   {isActive && (
                     <div className="absolute top-0 right-0 rounded-bl-lg bg-primary px-2 py-1 text-[9px] font-bold tracking-wider text-primary-foreground uppercase shadow-sm">
@@ -135,7 +143,7 @@ function Controller() {
                     </div>
                   )}
 
-                  <div className="flex aspect-square h-full flex-col items-center justify-center p-4">
+                  <div className="flex aspect-square h-full flex-col items-center justify-center gap-y-2 p-4">
                     <div className="relative mb-3 flex w-full flex-1 items-center justify-center">
                       <img
                         src={channel.logo}
@@ -145,6 +153,11 @@ function Controller() {
                     <h1 className="w-full text-center leading-tight font-medium group-hover:text-primary">
                       {channel.name}
                     </h1>
+                    {channel["programme"] && (
+                      <h2 className="w-full text-center text-sm leading-tight text-muted-foreground group-hover:text-primary">
+                        {channel["programme"]["title"]}
+                      </h2>
+                    )}
                   </div>
                 </div>
               )

@@ -1,4 +1,6 @@
+from datetime import datetime, timezone
 import sqlite3
+from zoneinfo import ZoneInfo
 
 
 def get_db_connection():
@@ -15,6 +17,8 @@ def init_db():
         setup_complete BOOLEAN,
         provider_username TEXT,
         provider_password TEXT,
+        epg_url TEXT,
+        last_epg_update TEXT,
         last_channel_id INTEGER
     );
     """
@@ -35,13 +39,24 @@ def init_db():
 
     channels_table_schema = """
     CREATE TABLE IF NOT EXISTS channels (
-        channel_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+        id  INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel_id  TEXT,
         name        TEXT,
         logo        TEXT,
         ts          TEXT,
         group_id    INTEGER,
         FOREIGN KEY(group_id) REFERENCES groups(group_id)
     );
+    """
+
+    programmes_table_schema = """
+        CREATE TABLE IF NOT EXISTS programmes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id TEXT,
+            title TEXT,
+            start_time TEXT,
+            stop_time TEXT
+        )
     """
 
     with get_db_connection() as conn:
@@ -52,6 +67,14 @@ def init_db():
         cursor.execute(domains_table_schema)
         cursor.execute(groups_table_schema)
         cursor.execute(channels_table_schema)
+        cursor.execute(programmes_table_schema)
+
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_programme_times ON programmes (start_time, stop_time)"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_programme_channel ON programmes (channel_id)"
+        )
 
         cursor.execute("SELECT * FROM settings")
         result = cursor.fetchone()
@@ -77,8 +100,60 @@ def mark_setup_complete(db):
     db.commit()
 
 
+def set_epg_url(db, url):
+    cursor = db.cursor()
+    cursor.execute(
+        "UPDATE settings SET epg_url= ? WHERE key='settings'",
+        (url,),
+    )
+    db.commit()
+
+
+def get_epg_url(db):
+    cursor = db.cursor()
+    cursor.execute("SELECT epg_url FROM settings")
+    result = cursor.fetchone()
+    return {"epg_url": result[0]}
+
+
+def update_epg_timestamp(db):
+    """Updates the last fetched timestamp to right now."""
+    cursor = db.cursor()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute(
+        "UPDATE settings SET last_epg_update = ? WHERE key='settings'",
+        (now_iso,),
+    )
+    db.commit()
+
+
+def get_epg_status(db):
+    """Returns both the URL and the last update timestamp."""
+    cursor = db.cursor()
+    cursor.execute("SELECT epg_url, last_epg_update FROM settings WHERE key='settings'")
+    result = cursor.fetchone()
+    if result:
+        return {"epg_url": result[0], "last_epg_update": result[1]}
+    return {"epg_url": None, "last_epg_update": None}
+
+
+def clear_prgrammes(db):
+    cursor = db.cursor()
+    cursor.execute("DELETE FROM programmes")
+
+
+def save_programme(db, programme_batch):
+    cursor = db.cursor()
+    cursor.executemany(
+        "INSERT INTO programmes (channel_id, title, start_time, stop_time) VALUES (?, ?, ?, ?)",
+        programme_batch,
+    )
+    db.commit()
+
+
 def save_channel(db, channel):
     cursor = db.cursor()
+    channel_id = channel.get("tvg-id", "")
     group_title = channel.get("group-title", "")
     name = channel.get("tvg-name", "")
     logo = channel.get("tvg-logo", "")
@@ -95,10 +170,10 @@ def save_channel(db, channel):
 
     cursor.execute(
         """
-        INSERT INTO channels (name, logo, ts, group_id) 
-        VALUES (?, ?, ?, ?)
+        INSERT INTO channels (channel_id, name, logo, ts, group_id) 
+        VALUES (?, ?, ?, ?, ?)
     """,
-        (name, logo, ts, group_id),
+        (channel_id, name, logo, ts, group_id),
     )
 
     db.commit()
@@ -111,32 +186,67 @@ def get_last_channel(db):
     return result[0]
 
 
-def update_last_channel(db, channel_id):
+def update_last_channel(db, id):
     cursor = db.cursor()
-    cursor.execute(
-        "UPDATE settings SET last_channel_id= ? WHERE key='settings'", (channel_id,)
-    )
+    cursor.execute("UPDATE settings SET last_channel_id= ? WHERE key='settings'", (id,))
     db.commit()
 
 
-def get_channel_by_id(db, channel_id):
+def get_channel_by_id(db, id):
     cursor = db.cursor()
-    cursor.execute("SELECT * FROM channels WHERE channel_id = ?", (channel_id,))
+    cursor.execute("SELECT * FROM channels WHERE id = ?", (id,))
     result = cursor.fetchone()
     if result == None:
         raise KeyError
     channel = {}
     channel["id"] = result[0]
-    channel["name"] = result[1]
-    channel["logo"] = result[2]
-    channel["ts"] = result[3]
+    channel["channel_id"] = result[1]
+    channel["name"] = result[2]
+    channel["logo"] = result[3]
+    channel["ts"] = result[4]
     return channel
 
 
-def get_group_channels(db, group_id):
+def get_live_programme(db, channel_id):
     cursor = db.cursor()
+    now_str = datetime.now(ZoneInfo("Europe/London")).strftime("%Y-%m-%d %H:%M:%S")
+
+    query = """
+        SELECT title, start_time, stop_time 
+        FROM programmes 
+        WHERE channel_id = ? 
+          AND start_time <= ? 
+          AND stop_time > ?
+        LIMIT 1
+    """
+
+    cursor.execute(query, (channel_id, now_str, now_str))
+    result = cursor.fetchone()
+
+    if result:
+        return {
+            "title": result[0],
+            "start_time": result[1],
+            "stop_time": result[2],
+        }
+    return None
+
+
+def get_group_channels(db, group_id):
+    # CRITICAL: This allows fetching rows as dictionary-like objects
+    db.row_factory = sqlite3.Row
+    cursor = db.cursor()
+
     cursor.execute("SELECT * FROM channels WHERE group_id = ?", (group_id,))
-    return cursor.fetchall()
+    channels = cursor.fetchall()
+
+    # Convert the sqlite3.Row objects to actual mutable dicts so you can add the "programme" key
+    channels_dict_list = [dict(channel) for channel in channels]
+
+    for channel in channels_dict_list:
+        channel["programme"] = get_live_programme(db, channel["channel_id"])
+
+    return channels_dict_list
 
 
 def get_groups(db):

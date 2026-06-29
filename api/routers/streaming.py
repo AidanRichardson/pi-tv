@@ -5,6 +5,7 @@ from app.db import (
     get_channel_by_id,
     get_group_channels,
     get_groups,
+    get_live_programme,
     update_last_channel,
 )
 from app.stream import is_ffmpeg_running, stop_ffmpeg
@@ -58,19 +59,16 @@ def channels(group_id: int, db=Depends(get_db_connection)):
 
 
 @router.get("/status")
-def status():
+def status(db=Depends(get_db_connection)):
+    channel_info = get_channel_by_id(db, stream_manager.current_channel["id"])
+    live_programme = get_live_programme(db, channel_info["channel_id"])
     return JSONResponse(
         {
-            "channel_id": (
-                stream_manager.current_channel["id"]
-                if stream_manager.current_channel
-                else None
-            ),
-            "channel": (
-                stream_manager.current_channel["name"]
-                if stream_manager.current_channel
-                else None
-            ),
+            "id": (channel_info["id"] if channel_info else None),
+            "channel": (channel_info["name"] if channel_info else None),
+            "programme": (live_programme["title"] if live_programme else None),
+            "started": (live_programme["start_time"] if live_programme else None),
+            "ending": (live_programme["stop_time"] if live_programme else None),
             "streaming": is_ffmpeg_running(),
         }
     )

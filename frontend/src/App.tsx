@@ -7,13 +7,18 @@ import { Link } from "react-router"
 import { Button } from "./components/ui/button"
 
 interface Status {
+  id: number
   channel: string
+  programme: string
+  started: string
+  ending: string
+  streaming: boolean
 }
 
 export function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const hlsRef = useRef<Hls | null>(null)
-  const [currentChannel, setCurrentChannel] = useState<string | null>(null)
+  const [currentChannelInfo, setCurrentChannelInfo] = useState<Status>()
 
   useEffect(() => {
     async function init() {
@@ -21,7 +26,7 @@ export function App() {
 
       const statusData = (await statusRes.json()) as Status
 
-      setCurrentChannel(statusData.channel)
+      setCurrentChannelInfo(statusData)
     }
     const video = videoRef.current
     if (!video) return
@@ -84,7 +89,14 @@ export function App() {
           Live Player
         </h1>
         <p className="max-w-150 text-2xl text-muted-foreground">
-          {currentChannel}
+          {currentChannelInfo?.channel}
+        </p>
+        <p className="max-w-150 text-2xl text-muted-foreground">
+          {currentChannelInfo?.programme}
+        </p>
+        <p className="max-w-150 text-2xl text-muted-foreground">
+          {currentChannelInfo?.started.split(" ")[1]} -{" "}
+          {currentChannelInfo?.ending.split(" ")[1]}
         </p>
         <Button asChild size="lg" className="mt-2 rounded-full px-8 shadow-md">
           <Link to="/controller">

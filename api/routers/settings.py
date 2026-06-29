@@ -3,13 +3,27 @@ from fastapi.responses import JSONResponse
 from app.db import (
     get_db_connection,
     get_creds,
+    get_epg_url,
     set_creds,
     get_domains,
+    set_epg_url,
     update_domains,
 )
 from api.streammanager import stream_manager
 
 router = APIRouter(prefix="/api", tags=["settings"])
+
+
+@router.get("/epgurl")
+def epgurl(db=Depends(get_db_connection)):
+    return get_epg_url(db)
+
+
+@router.post("/epgurl")
+async def post_epg_url(request: Request, db=Depends(get_db_connection)):
+    data = await request.json()
+    set_epg_url(db, data["epg_url"])
+    return JSONResponse({"status": "ok"})
 
 
 @router.get("/userpass")
