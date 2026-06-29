@@ -81,7 +81,7 @@ def init_db():
 
         if not result:
             cursor.execute(
-                "INSERT INTO settings VALUES ('settings', false, 'USERNAME','PASSWORD', 'EPG_URL', '', 1)"
+                "INSERT INTO settings VALUES ('settings', false, 'USERNAME','PASSWORD', NULL, NULL, 1)"
             )
 
         conn.commit()

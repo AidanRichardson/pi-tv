@@ -81,8 +81,8 @@ async def setup_upload_epg_from_url(request: Request):
 
 @router.get("/parse-playlist")
 async def setup_parse_epg():
-    if not os.path.exists(EPG_TEMP_PATH):
-        raise HTTPException(status_code=400, detail="No uploaded epg found.")
+    if not os.path.exists(M3U_TEMP_PATH):
+        raise HTTPException(status_code=400, detail="No uploaded m3u found.")
 
     async def generate():
         with get_db_context() as db:

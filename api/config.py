@@ -3,7 +3,7 @@ from pathlib import Path
 
 HLS_DIR = Path("tmp/pi-tv-hls")
 FRONTEND_DIST = Path("dist")
-UPLOAD_DIR = Path("/tmp/setup_uploads")
+UPLOAD_DIR = Path("tmp/setup_uploads")
 M3U_TEMP_PATH = os.path.join(UPLOAD_DIR, "pending_playlist.m3u")
 EPG_TEMP_PATH = os.path.join(UPLOAD_DIR, "pending_guide.xml")
 
