@@ -9,9 +9,9 @@ import { Button } from "./components/ui/button"
 interface Status {
   id: number
   channel: string
-  programme: string
-  started: string
-  ending: string
+  programme: string | null
+  started?: string
+  ending?: string
   streaming: boolean
 }
 
@@ -94,10 +94,12 @@ export function App() {
         <p className="max-w-150 text-2xl text-muted-foreground">
           {currentChannelInfo?.programme}
         </p>
-        <p className="max-w-150 text-2xl text-muted-foreground">
-          {currentChannelInfo?.started.split(" ")[1]} -{" "}
-          {currentChannelInfo?.ending.split(" ")[1]}
-        </p>
+        {currentChannelInfo?.started && currentChannelInfo?.ending && (
+          <p className="max-w-150 text-2xl text-muted-foreground">
+            {currentChannelInfo.started.split(" ")[1]} -{" "}
+            {currentChannelInfo.ending.split(" ")[1]}
+          </p>
+        )}
         <Button asChild size="lg" className="mt-2 rounded-full px-8 shadow-md">
           <Link to="/controller">
             <Tv2 className="mr-2 h-5 w-5 fill-current" /> VIEW CHANNELS
